@@ -10,7 +10,7 @@ from name_table import *
 # Reference:
 # https://developer.apple.com/fonts/TrueType-Reference-Manual/
 
-_version = '0.1'
+_version = '0.1.1'
 
 class TTFObject(object):
     def __init__(self, fin):
@@ -45,16 +45,32 @@ class TTFObject(object):
         'you can use python-style format\n'
         'e.g. "0x{name:0>2x}-{name}.svg"'
         name = self.post.names[index]
-        string = (
-            '<svg\n'
-            '    width="{size}"\n'
-            '    height="{size}"\n'
-            '    viewBox="{offset} {offset} {size} {size}"\n'
-            '    xmlns="http://www.w3.org/2000/svg"\n'
-            '>\n'.format(size=4096*scale, offset=-2048*scale)
-        )
-        string += self.glyf.draw_line(index, scale=scale)
-        string += '</svg>'
+
+        x_min = self.head.x_min
+        x_max = self.head.x_max
+        y_min = self.head.y_min
+        y_max = self.head.y_max
+
+        if self.glyf.glyphs[index] is None:
+            string = '<svg/>'
+
+        else:
+            string = (
+                '<svg\n'
+                '    width="{x}"\n'
+                '    height="{y}"\n'
+                '    viewBox="{offset_x} {offset_y} {x} {y}"\n'
+                '    xmlns="http://www.w3.org/2000/svg"\n'
+                '>\n'.format(
+                    x=scale*(x_max-x_min+1),
+                    y=scale*(y_max-y_min+1),
+                    # offset=-2048*scale,
+                    offset_x=scale*x_min,
+                    offset_y=scale*(-y_max),
+                )
+            )
+            string += self.glyf.draw_line(index, scale=scale)
+            string += '</svg>'
 
         for i, nr in enumerate(self.name.name_record_array):
             if (

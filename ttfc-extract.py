@@ -22,7 +22,7 @@ options:
                 extract all glyphs.  Note that 0-th index means first glyph.
                 Defaults to -1.
 
-    -s scale      scales the vectors.  Defaults to 0.25.
+    -s scale      scales the vectors.  Defaults to 0.10.
 
     -o name       specifies the name of output file.  You can use the following
                 variables:
@@ -59,7 +59,7 @@ parser.add_argument(
     '-i', metavar='INDEX', type=int, default=-1,
 )
 parser.add_argument(
-    '-s', metavar='SCALE', type=float, default=0.25,
+    '-s', metavar='SCALE', type=float, default=0.10,
 )
 parser.add_argument(
     '-o', metavar='name', default='{index}.svg',
@@ -83,8 +83,8 @@ def main():
         return 1
 
     with open(namespace.file[0], 'rb') as fin:
-        magic = fin.read(8)
-        if not magic in ('\0\1\0\0',):
+        magic = fin.read(4)
+        if not magic in ('\x00\x01\x00\x00',):
             print 'This file seems to be not TTF format.'
             return 2
 
