@@ -1,26 +1,37 @@
 #!/usr/bin/env python
 
 import argparse
+import os
 import sys
 import ttfutil
 
+_version = '0.2'
 
-usage = 'ttfc-extract [-q] [-i index] [-s scale] [-o name] <file>'
-help_ = '''\
-usage: {usage}
 
-Extract font glyphs from TTF files in SVG format.
-(( WIP with TTC files ))
+usage = (
+    'ttfc-extract [options] <file>\n'
+    "`ttfc-extract -h' for help message."
+)
+help_ = '''usage: ttfc-extract [options] <file>
+
+Extract font glyphs from TTF/TTC files in SVG format.
 
 argument:
-    <file>      a TTF file
+    <file>      either a TTF or a TTC file
 
 options:
-    -q            be silent on success.
+    -h, --help    shows this message
 
-    -i index      extracts only index-th glyph.  Specify negative number to
+    -v, --version
+                  shows version number
+
+    -q            be silent on success
+
+    -g index      extracts only index-th glyph.  Specify negative number to
                 extract all glyphs.  Note that 0-th index means first glyph.
                 Defaults to -1.
+
+    -f index      extracts only index-th fonts (with TTC only); like -g.
 
     -s scale      scales the vectors.  Defaults to 0.10.
 
@@ -42,9 +53,13 @@ options:
 original-maintainer:
     https://github.com/rsk0315
     https://twitter.com/rsk0315_h4x
-'''.format(usage=usage)
+'''
 
-parser = argparse.ArgumentParser(add_help=False)
+
+parser = argparse.ArgumentParser(
+    add_help=False,
+    usage=usage,
+)
 
 parser.add_argument(
     '-h', '--help', action='store_true', default=False,
@@ -56,7 +71,10 @@ parser.add_argument(
     '-q', action='store_true', default=False,
 )
 parser.add_argument(
-    '-i', metavar='INDEX', type=int, default=-1,
+    '-g', metavar='INDEX', type=int, default=-1,
+)
+parser.add_argument(
+    '-f', metavar='INDEX', type=int, default=-1,
 )
 parser.add_argument(
     '-s', metavar='SCALE', type=float, default=0.10,
@@ -76,7 +94,11 @@ def main():
         return 0
 
     if namespace.version:
-        print ttfutil._version
+        print (
+            'ttfc-extract {}\n'
+            'Copyright (C) 2016 @rsk0315_h4x'
+        ).format(_version)
+        return 0
 
     if not len(namespace.file) == 1:
         print usage
@@ -84,34 +106,68 @@ def main():
 
     with open(namespace.file[0], 'rb') as fin:
         magic = fin.read(4)
-        if not magic in ('\x00\x01\x00\x00',):
-            print 'This file seems to be not TTF format.'
+
+        if magic in ('true', '\x00\x01\x00\x00'):
+            try:
+                ttf = ttfutil.TTFObject(fin)
+            except Exception as e:
+                print e
+                print 'Unexpected error occurred while reading the TTF file.'
+                return 2
+
+            ttfs = (ttf,)
+
+        elif magic in ('ttcf',):
+            try:
+                ttc = ttfutil.TTCObject(fin)
+            except Exception as e:
+                print e
+                print 'Unexpected error occurred while reading the TTC file.'
+                return 2
+
+            ttfs = ttc.ttfs
+            if namespace.f > -1:
+                if namespace.f < len(ttfs):
+                    ttfs = (ttfs[namespace.f],)
+                else:
+                    ttfs = ()
+
+        elif magic in ('typ1', 'OTTO'):
+            print 'This program cannot handle the font format.\n'
+            print 'Magic: {!r} {!r} {!r} {!r}'.format(*magic)
             return 2
 
-        try:
-            t = ttfutil.dump(fin)
-        except Exception as e:
-            print e
-            print 'Unexpected error occurred while dumping the file.'
+        else:
+            print 'This file is written in unexpected format.\n'
+            print 'Magic: {!r} {!r} {!r} {!r}'.format(*magic)
             return 2
 
-    if namespace.i < 0:
-        start = 0
-        end = t.maxp.num_glyphs
-    else:
-        start = namespace.i
-        end = start + 1
 
-    for i in range(start, end):
-        try:
-            name = t.save(i, outname=namespace.o, scale=namespace.s)
-        except Exception as e:
-            print e
-            print 'Unexpected error occurred while drawing images.'
-            return 2
+    options = {
+        'outname': namespace.o,
+        'scale': namespace.s,
+    }
 
-        if not namespace.q:
-            print 'Saved:', name
+    for ttf_ in ttfs:
+        if namespace.g < 0:
+            start = 0
+            end = ttf_.maxp.num_glyphs
+        else:
+            start = namespace.g
+            end = start + 1
+
+        for i in range(start, end):
+            try:
+                name = ttf_.save(i, **options)
+            except Exception as e:
+                print e
+                print 'Unexpected error occurred while saving SVGs.'
+                raise e
+                return 2
+
+            if not namespace.q:
+                print 'Saved:', name
+
 
 if __name__ == '__main__':
     main()

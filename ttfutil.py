@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import datetime
+import os
 import struct
 from StringIO import StringIO
 
@@ -10,12 +11,54 @@ from name_table import *
 # Reference:
 # https://developer.apple.com/fonts/TrueType-Reference-Manual/
 
-_version = '0.1.1'
+_version = '0.2'
 
-class TTFObject(object):
-    def __init__(self, fin):
+
+class TTCObject(object):
+    def __init__(self, fin, offset=0):
         self.fin = fin
         self.fin.seek(0)
+
+        self.ttc_tag = self.fin.read(4)
+        if not self.ttc_tag == 'ttcf':
+            raise ValueError(
+                'This file seems to be not TTC format.\n'
+                'Magic: {!r} {!r} {!r} {!r}'.format(*self.ttc_tag)
+            )
+
+        self.version = fixed(self.fin.read(4))
+        if self.version in (1.0, 2.0):
+            self.num_fonts, = struct.unpack('>I', self.fin.read(4))
+            self.offset_table = []
+            for i in range(self.num_fonts):
+                self.offset_table.append(
+                    struct.unpack('>I', self.fin.read(4))[0]
+                )
+        else:
+            raise ValueError(
+                'This file seems unknown version of TTC: {}.'.format(
+                    self.version
+                )
+            )
+
+        if self.version == 2.0:
+            (
+                self.dsig_tag,
+                self.dsig_length,
+                self.dsig_offset,
+            ) = struct.unpack('4s2I', self.fin.read(0xc))
+
+        self.ttfs = []
+        for i in range(self.num_fonts):
+            self.ttfs.append(
+                TTFObject(self.fin, self.offset_table[i])
+            )
+
+
+class TTFObject(object):
+    def __init__(self, fin, offset=0):
+        self.fin = fin
+        self.fin.seek(offset)
 
         self.sfnt_version = fixed(self.fin.read(4))
         (
@@ -33,6 +76,18 @@ class TTFObject(object):
 
             self.tables[table_name] = TTFTable(checksum, offset, length)
 
+        self.head = TTFHead(self)
+        self.hhea = TTFHHea(self)
+        self.maxp = TTFMaxP(self)
+        self.name = TTFName(self)
+        self.os_2 = TTFOS_2(self)
+        self.post = TTFPost(self)
+        self.cmap = TTFCMap(self)
+        self.hmtx = TTFHMtx(self)
+        self.loca = TTFLoca(self)
+        self.glyf = TTFGlyf(self)
+
+
     def save(
             self, index,
             outname='{index}-{gname}.svg',
@@ -41,7 +96,7 @@ class TTFObject(object):
         'variables:\n'
         '  {index} - glyph index\n'
         '  {gname} - glyph name\n'
-        '  {fname} - font name\n'  # TODO
+        '  {fname} - font name\n'
         'you can use python-style format\n'
         'e.g. "0x{name:0>2x}-{name}.svg"'
         name = self.post.names[index]
@@ -64,7 +119,6 @@ class TTFObject(object):
                 '>\n'.format(
                     x=scale*(x_max-x_min+1),
                     y=scale*(y_max-y_min+1),
-                    # offset=-2048*scale,
                     offset_x=scale*x_min,
                     offset_y=scale*(-y_max),
                 )
@@ -89,6 +143,10 @@ class TTFObject(object):
             name=name,
             fname=fname,
         )
+
+        if not os.path.isdir(os.path.dirname(outname)):
+            os.mkdir(os.path.dirname(outname))
+
         with open(outname, 'w') as fout:
             fout.write(string)
 
@@ -407,7 +465,7 @@ class TTFLoca(object):
                 offset = 2 * struct.unpack('>H', ttf.fin.read(2))[0]
                 self.offsets.append(offset)
 
-        elif index_of_loc_format == 1:
+        elif index_to_loc_format == 1:
             for i in range(num_glyphs+1):
                 offset, = struct.unpack('>I', ttf.fin.read(4))
                 self.offsets.append(offset)
@@ -703,17 +761,4 @@ def calc_path(flags, coordinates, matrix):
     return string
 
 
-def dump(fin):
-    ttf_obj = TTFObject(fin)
-    ttf_obj.head = TTFHead(ttf_obj)
-    ttf_obj.hhea = TTFHHea(ttf_obj)
-    ttf_obj.maxp = TTFMaxP(ttf_obj)
-    ttf_obj.name = TTFName(ttf_obj)
-    ttf_obj.os_2 = TTFOS_2(ttf_obj)
-    ttf_obj.post = TTFPost(ttf_obj)
-    ttf_obj.cmap = TTFCMap(ttf_obj)
-    ttf_obj.hmtx = TTFHMtx(ttf_obj)
-    ttf_obj.loca = TTFLoca(ttf_obj)
-    ttf_obj.glyf = TTFGlyf(ttf_obj)
 
-    return ttf_obj
